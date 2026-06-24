@@ -26,6 +26,7 @@ The canonical list of topic tags. `enrich-note` reads this before tagging.
 - `ai-hardware` — GPUs, chips, accelerators, Nvidia
 - `claude-code` — coding agents, agent loops, code review bots, AI-assisted dev
 - `open-source` — open-source strategy and community
+- `software-engineering` — general software engineering: coding, tooling, system design, dev setup, technical interviews
 
 ## Product & business
 
