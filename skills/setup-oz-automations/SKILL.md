@@ -80,6 +80,6 @@ Tell the user:
 
 - Both schedules are live, with names, cron times, and schedule IDs.
 - They can pause one anytime with `oz schedule pause SCHEDULE_ID`.
-- Every run is viewable in the online portal at `https://oz.warp.dev/runs/RUN_ID`. Once runs exist, get their IDs with `oz run list --output-format json` (or `oz schedule get SCHEDULE_ID`, which shows a schedule's recent runs) and output the full portal URLs so the user can click straight through.
+- They can view runs and trigger a schedule manually from the online portal: [https://oz.warp.dev/schedules](https://oz.warp.dev/schedules). Output that link.
 
-Offer to pause the schedules initially if they'd rather test with a manual run first. If they do want a test run, spawn it with `oz agent run-cloud`, then report its `https://oz.warp.dev/runs/RUN_ID` link so they can watch it live.
+Offer to pause the schedules initially if they'd rather trigger a test run from the portal first.
