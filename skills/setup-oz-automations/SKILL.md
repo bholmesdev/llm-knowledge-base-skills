@@ -18,9 +18,10 @@ Read that skill before running any `oz` commands.
 
 Then gather from the user:
 
-- **Skills repo** — the GitHub repo containing these skills, as `owner/name` (this repo, or their fork).
 - **Obsidian Sync vault name** — e.g. `Main`. They need an [Obsidian Sync](https://obsidian.md/sync) vault pointed at their notes directory, and the [headless CLI](https://obsidian.md/help/headless) auth token for it.
 - **Schedule times** — default to nightly enrichment and weekly wiki refresh if they have no preference.
+
+The skills are pulled straight from `bholmesdev/llm-knowledge-base-skills` — no repo of their own needed. Only ask about a repo if the user says they've forked the skills to tweak them; then substitute their `owner/name` everywhere `bholmesdev/llm-knowledge-base-skills` appears below.
 
 Make sure they're logged in (`oz login`). If they have no account, send them to [oz.dev](https://oz.dev) → "start an agent".
 
@@ -41,7 +42,7 @@ oz environment create \
   --personal \
   --name "Knowledge base automation" \
   --docker-image "warpdotdev/dev-base:latest-agents" \
-  --repo "SKILLS_REPO" \
+  --repo "bholmesdev/llm-knowledge-base-skills" \
   --setup-command 'npm install -g obsidian-headless' \
   --setup-command 'mkdir -p ~/.obsidian-headless && printf "%s" "$OBSIDIAN_AUTH_TOKEN" > ~/.obsidian-headless/auth_token' \
   --setup-command 'mkdir -p ~/vault && cd ~/vault && ob sync-setup --vault VAULT_NAME && ob sync'
@@ -59,7 +60,7 @@ oz schedule create \
   --name "Enrich notes loop" \
   --cron "0 8 * * *" \
   --environment "ENV_ID" \
-  --skill "SKILLS_REPO:enrich-notes-loop-cloud" \
+  --skill "bholmesdev/llm-knowledge-base-skills:enrich-notes-loop-cloud" \
   --prompt 'Run the enrich-notes-loop-cloud skill.'
 
 oz schedule create \
@@ -67,7 +68,7 @@ oz schedule create \
   --name "Refresh wikis" \
   --cron "0 8 * * 1" \
   --environment "ENV_ID" \
-  --skill "SKILLS_REPO:refresh-wiki-cloud" \
+  --skill "bholmesdev/llm-knowledge-base-skills:refresh-wiki-cloud" \
   --prompt 'Run the refresh-wiki-cloud skill.'
 ```
 

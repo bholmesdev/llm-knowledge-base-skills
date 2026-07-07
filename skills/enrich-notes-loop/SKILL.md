@@ -7,7 +7,7 @@ description: Enrich every un-enriched note in the vault by running enrich-note o
 
 Run the [enrich-note](../enrich-note/SKILL.md) process across the whole vault, one note at a time.
 
-**First run only:** if the tag registry (`enrich-note/references/tags.md`) is still the starter seed, skim the existing notes and flesh it out with the real recurring topics first, so tags are consistent from note one.
+**First run only:** if the vault's tag registry (`tags.md` at the vault root) is missing or still the starter seed, skim the existing notes and flesh it out with the real recurring topics first, so tags are consistent from note one.
 
 Then walk every note under `raw/` (and the vault root) whose frontmatter has no `enrichedAt`, and enrich it. Skip notes already stamped — that's how you know what's left.
 

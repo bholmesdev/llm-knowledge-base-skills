@@ -12,7 +12,9 @@ Do the three steps below, then stamp `enrichedAt` with the current ISO timestamp
 
 ## 1. Tags
 
-Read [references/tags.md](references/tags.md) first. Reuse an existing tag whenever one fits. Be **reluctant** to add new tags. Tags should span many notes, not a couple. Only coin a new tag when nothing matches, and when you do, append it to the registry with a one-line description so the next note can reuse it.
+Read the tag registry at the vault root (`tags.md`) first. If it doesn't exist yet, create it by copying the starter seed from [references/tags.md](references/tags.md). The registry lives in the vault — not this skill — so your tags persist and sync no matter where the skill runs from.
+
+Reuse an existing tag whenever one fits. Be **reluctant** to add new tags. Tags should span many notes, not a couple. Only coin a new tag when nothing matches, and when you do, append it to the registry with a one-line description so the next note can reuse it.
 
 
 

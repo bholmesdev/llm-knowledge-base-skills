@@ -42,7 +42,7 @@ Two self-contained HTML apps that build views of your vault in real time. Drop t
 
 ## Running in the cloud
 
-The `-cloud` variants are built for scheduled runners like [Oz](https://oz.dev). They assume the environment setup has synced your vault to `~/vault` with [Obsidian's headless CLI](https://obsidian.md/help/headless). See the blog post below for the full environment and schedule setup.
+The `-cloud` variants are built for scheduled runners like [Oz](https://oz.dev). They assume the environment setup has synced your vault to `~/vault` with [Obsidian's headless CLI](https://obsidian.md/help/headless). Run the setup-oz-automations skill with your agent to create the environment and schedules — it pulls the skills straight from this repo, so there's nothing to push. Want to tweak the skills? Fork this repo and point the setup skill at your fork instead.
 
 ## Read the full walkthrough
 
