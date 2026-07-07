@@ -47,4 +47,4 @@ The `-cloud` variants are built for scheduled runners like [Oz](https://oz.dev).
 
 ## Read the full walkthrough
 
-These skills are from my post on building a self-updating LLM knowledge base: [bholmes.dev/blog](https://bholmes.dev/blog).
+These skills are [from my post on building a self-updating LLM knowledge base.](https://bholmes.dev/blog/llm-knowledge-bases/)
