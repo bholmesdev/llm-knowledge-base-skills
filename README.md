@@ -26,7 +26,8 @@ npx skills add bholmesdev/llm-knowledge-base-skills
 ```
 your-vault/
 ├── raw/       # raw, unfiltered notes — agents read these, never rewrite them
-└── wikis/     # generated wikis — agents own this layer
+├── wikis/     # generated wikis — agents own this layer
+└── tags.md    # the tag registry — seeded by enrich-note on first run
 ```
 
 Tweak the skills to taste if your layout differs.
