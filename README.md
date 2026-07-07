@@ -19,6 +19,7 @@ npx skills add bholmesdev/llm-knowledge-base-skills
 | [refresh-wiki](skills/refresh-wiki/SKILL.md) | Maintain every llm-wiki under `wikis/`: ingest new source notes, update entity/concept pages, and lint for stale claims and orphan pages. |
 | [enrich-notes-loop-cloud](skills/enrich-notes-loop-cloud/SKILL.md) | enrich-notes-loop wrapped for scheduled cloud runs: sync an Obsidian vault down, enrich, sync back up. |
 | [refresh-wiki-cloud](skills/refresh-wiki-cloud/SKILL.md) | refresh-wiki wrapped the same way for scheduled cloud runs. |
+| [setup-oz-automations](skills/setup-oz-automations/SKILL.md) | Walks your agent through creating the [Oz](https://oz.dev) environment and schedules that run the cloud skills. |
 
 ## Expected vault layout
 
