@@ -52,7 +52,7 @@ Get the environment ID with `oz environment list` for the next step.
 
 ## 3. Create the schedules
 
-One nightly run for note enrichment, one weekly for wikis. Each points at its cloud skill:
+One nightly run for note enrichment, one weekly for wikis. Each points at its cloud skill, running on Kimi k2.6 — an open-weight model that's token-efficient and plenty capable for this work (swap `--model` if the user prefers something else; `oz model list` shows the options):
 
 ```sh
 oz schedule create \
@@ -60,6 +60,7 @@ oz schedule create \
   --name "Enrich notes loop" \
   --cron "0 8 * * *" \
   --environment "ENV_ID" \
+  --model kimi-k26-fireworks \
   --skill "bholmesdev/llm-knowledge-base-skills:enrich-notes-loop-cloud" \
   --prompt 'Run the enrich-notes-loop-cloud skill.'
 
@@ -68,6 +69,7 @@ oz schedule create \
   --name "Refresh wikis" \
   --cron "0 8 * * 1" \
   --environment "ENV_ID" \
+  --model kimi-k26-fireworks \
   --skill "bholmesdev/llm-knowledge-base-skills:refresh-wiki-cloud" \
   --prompt 'Run the refresh-wiki-cloud skill.'
 ```
@@ -76,8 +78,8 @@ oz schedule create \
 
 Tell the user:
 
-- Both schedules are live, with names and cron times.
+- Both schedules are live, with names, cron times, and schedule IDs.
 - They can pause one anytime with `oz schedule pause SCHEDULE_ID`.
-- Every run leaves a session transcript to review from the Oz dashboard.
+- Every run is viewable in the online portal at `https://oz.warp.dev/runs/RUN_ID`. Once runs exist, get their IDs with `oz run list --output-format json` (or `oz schedule get SCHEDULE_ID`, which shows a schedule's recent runs) and output the full portal URLs so the user can click straight through.
 
-Offer to pause the schedules initially if they'd rather test with a manual run first.
+Offer to pause the schedules initially if they'd rather test with a manual run first. If they do want a test run, spawn it with `oz agent run-cloud`, then report its `https://oz.warp.dev/runs/RUN_ID` link so they can watch it live.
