@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Notes burndown</title>
+		<script>
+			document.addEventListener('alpine:init', () => {
+				const DAY = 86400000
+				const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+				// GitHub-style green ramp; level 0 falls back to a theme token.
+				const RAMP = ['#9be9a8', '#40c463', '#30a14e', '#216e3a']
+
+				const pad = (n) => String(n).padStart(2, '0')
+				const key = (d) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`
+				const pretty = (d) =>
+					`${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`
+
+				// Derive a UTC date string from frontmatter, preferring updatedAtISO.
+				function dateKeyFromProps(props) {
+					if (props && typeof props.updatedAtISO === 'string' && props.updatedAtISO.length >= 10) {
+						return props.updatedAtISO.slice(0, 10)
+					}
+					if (props && typeof props.updatedAt === 'number') {
+						return key(new Date(props.updatedAt))
+					}
+					return null
+				}
+
+				// First non-empty line of the body makes a decent title.
+				function titleFromBody(body, fallback) {
+					if (typeof body === 'string') {
+						for (const raw of body.split('\n')) {
+							const line = raw.replace(/^#+\s*/, '').trim()
+							if (line) return line
+						}
+					}
+					return fallback
+				}
+
+				Alpine.data('burndown', () => ({
+					loading: true,
+					error: '',
+					weeks: [],
+					monthLabels: [],
+					byDate: {},
+					total: 0,
+					daysActive: 0,
+					maxCount: 0,
+					busiest: null,
+					tooltip: { show: false, x: 0, y: 0, dateLabel: '', count: 0, notes: [] },
+
+					async init() {
+						try {
+							let files = await hubble.files.list('raw/**/*.md')
+							if (!files.length) files = await hubble.files.list('raw/*.md')
+							if (!files.length) {
+								const all = await hubble.files.list('**/*.md')
+								files = all.filter((f) => f.path.startsWith('raw/'))
+							}
+
+							const reads = await Promise.all(files.map((f) => hubble.files.safeRead(f.path)))
+							const byDate = {}
+							for (let i = 0; i < reads.length; i++) {
+								const res = reads[i]
+								if (!res.ok) continue
+								const file = res.value
+								const dk = dateKeyFromProps(file.properties)
+								if (!dk) continue
+								if (!byDate[dk]) byDate[dk] = { count: 0, notes: [] }
+								byDate[dk].count++
+								byDate[dk].notes.push({
+									title: titleFromBody(file.body, files[i].name.replace(/\.md$/, '')),
+									path: file.path,
+								})
+							}
+
+							this.byDate = byDate
+							this.buildGrid(byDate)
+						} catch (error) {
+							this.error = error.message || 'Could not build the chart'
+						} finally {
+							this.loading = false
+						}
+					},
+
+					buildGrid(byDate) {
+						const keys = Object.keys(byDate).sort()
+						if (!keys.length) return
+
+						const first = new Date(keys[0] + 'T00:00:00Z')
+						const today = new Date()
+						const last = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()))
+						const lastNote = new Date(keys[keys.length - 1] + 'T00:00:00Z')
+						const end = lastNote > last ? lastNote : last
+
+						// Start on the Sunday on/before the first note.
+						const start = new Date(first.getTime() - first.getUTCDay() * DAY)
+
+						let total = 0
+						let daysActive = 0
+						let maxCount = 0
+						let busiest = null
+						for (const k of keys) {
+							const c = byDate[k].count
+							total += c
+							daysActive++
+							if (c > maxCount) {
+								maxCount = c
+								busiest = { dateLabel: pretty(new Date(k + 'T00:00:00Z')), count: c }
+							}
+						}
+
+						const weeks = []
+						const monthLabels = []
+						let cursor = new Date(start.getTime())
+						let prevMonth = -1
+						let lastLabelWeek = -99
+						while (cursor <= end) {
+							const week = []
+							const weekMonth = cursor.getUTCMonth()
+							for (let d = 0; d < 7; d++) {
+								if (cursor <= end) {
+									const k = key(cursor)
+									const entry = byDate[k]
+									const count = entry ? entry.count : 0
+									week.push({
+										key: k,
+										dateLabel: pretty(cursor),
+										count,
+										level: count === 0 ? 0 : Math.min(4, Math.ceil((count / maxCount) * 4)),
+										notes: entry ? entry.notes : [],
+										inRange: cursor >= first,
+									})
+								} else {
+									week.push(null)
+								}
+								cursor = new Date(cursor.getTime() + DAY)
+							}
+							const weekIndex = weeks.length
+							let label = ''
+							if (weekMonth !== prevMonth && weekIndex - lastLabelWeek >= 3) {
+								label = MONTHS[weekMonth]
+								lastLabelWeek = weekIndex
+							}
+							monthLabels.push(label)
+							prevMonth = weekMonth
+							weeks.push(week)
+						}
+
+						this.weeks = weeks
+						this.monthLabels = monthLabels
+						this.total = total
+						this.daysActive = daysActive
+						this.maxCount = maxCount
+						this.busiest = busiest
+					},
+
+					cellStyle(cell) {
+						if (!cell || cell.level === 0) return ''
+						return `background-color:${RAMP[cell.level - 1]}`
+					},
+
+					legendStyle(level) {
+						return level === 0 ? '' : `background-color:${RAMP[level - 1]}`
+					},
+
+					showTip(cell, event) {
+						if (!cell) return
+						const rect = event.currentTarget.getBoundingClientRect()
+						const TIP_W = 260
+						const x = Math.max(8, Math.min(rect.left, window.innerWidth - TIP_W - 8))
+						this.tooltip = {
+							show: true,
+							x,
+							y: rect.bottom + 6,
+							dateLabel: cell.dateLabel,
+							count: cell.count,
+							notes: cell.notes,
+						}
+					},
+
+					hideTip() {
+						this.tooltip.show = false
+					},
+				}))
+			})
+		</script>
+	</head>
+	<body class="m-0 bg-background p-3 font-sans text-foreground">
+		<main
+			x-data="burndown"
+			class="grid gap-4 rounded-md border border-border bg-card p-4 text-card-foreground"
+		>
+			<header class="flex flex-wrap items-end justify-between gap-3">
+				<div>
+					<h1 class="m-0 text-lg font-semibold">Notes burndown</h1>
+				</div>
+				<div class="flex gap-5 text-sm" x-show="!loading && !error">
+					<div>
+						<div class="text-lg font-semibold leading-none" x-text="total"></div>
+						<div class="mt-1 text-xs text-muted-foreground">notes</div>
+					</div>
+					<div>
+						<div class="text-lg font-semibold leading-none" x-text="daysActive"></div>
+						<div class="mt-1 text-xs text-muted-foreground">active days</div>
+					</div>
+				</div>
+			</header>
+
+			<p class="m-0 text-sm text-muted-foreground" x-show="loading">Loading notes…</p>
+			<p class="m-0 text-sm text-destructive" x-show="error" x-text="error"></p>
+
+			<div x-show="!loading && !error" class="overflow-x-auto">
+				<div class="flex gap-1">
+					<!-- Day-of-week labels -->
+					<div class="flex flex-col gap-1 pr-2 text-xs leading-none text-muted-foreground">
+						<div class="h-5"></div>
+						<div class="flex h-5 items-center"></div>
+						<div class="flex h-5 items-center">Mon</div>
+						<div class="flex h-5 items-center"></div>
+						<div class="flex h-5 items-center">Wed</div>
+						<div class="flex h-5 items-center"></div>
+						<div class="flex h-5 items-center">Fri</div>
+						<div class="flex h-5 items-center"></div>
+					</div>
+
+					<div>
+						<!-- Month labels -->
+						<div class="flex h-5 gap-1">
+							<template x-for="(label, wi) in monthLabels" :key="wi">
+								<div class="relative w-5">
+									<span class="absolute left-0 top-0 whitespace-nowrap text-xs leading-none text-muted-foreground" x-text="label"></span>
+								</div>
+							</template>
+						</div>
+
+						<!-- Week columns -->
+						<div class="flex gap-1">
+							<template x-for="(week, wi) in weeks" :key="wi">
+								<div class="flex flex-col gap-1">
+									<template x-for="(cell, di) in week" :key="di">
+										<div
+											class="h-5 w-5 rounded-sm border border-border/40"
+											:class="cell ? 'cursor-default' : 'border-transparent'"
+											:style="cellStyle(cell)"
+											@mouseenter="showTip(cell, $event)"
+											@mouseleave="hideTip()"
+										></div>
+									</template>
+								</div>
+							</template>
+						</div>
+					</div>
+				</div>
+
+				<!-- Legend -->
+				<div class="mt-4 flex items-center justify-end gap-2 text-xs text-muted-foreground">
+					<span>Less</span>
+					<template x-for="level in [0,1,2,3,4]" :key="level">
+						<div class="h-5 w-5 rounded-sm border border-border/40" :style="legendStyle(level)"></div>
+					</template>
+					<span>More</span>
+				</div>
+			</div>
+
+			<!-- Tooltip -->
+			<div
+				x-show="tooltip.show"
+				x-cloak
+				class="pointer-events-none fixed z-[9999] w-[260px] rounded-md border border-border bg-card px-3 py-2 text-card-foreground shadow-lg"
+				:style="`left:${tooltip.x}px; top:${tooltip.y}px`"
+			>
+				<div class="text-xs font-semibold" x-text="`${tooltip.count} note${tooltip.count === 1 ? '' : 's'} · ${tooltip.dateLabel}`"></div>
+				<ul class="m-0 mt-1 max-h-40 list-none overflow-hidden p-0" x-show="tooltip.notes.length">
+					<template x-for="(note, ni) in tooltip.notes" :key="ni">
+						<li class="truncate text-xs text-muted-foreground" x-text="`• ${note.title}`"></li>
+					</template>
+				</ul>
+				<div class="mt-1 text-xs text-muted-foreground" x-show="!tooltip.notes.length">No notes</div>
+			</div>
+		</main>
+
+		<style>
+			[x-cloak] {
+				display: none !important;
+			}
+		</style>
+	</body>
+</html>

@@ -30,6 +30,15 @@ your-vault/
 
 Tweak the skills to taste if your layout differs.
 
+## Visualizations
+
+Two self-contained HTML apps that build views of your vault in real time. Drop them in the same directory as your notes and open the vault in [Hubble](https://hubble.md), which injects the file-reading runtime they use:
+
+| File | What it shows |
+| --- | --- |
+| [notes-burndown.html](visualizations/notes-burndown.html) | A GitHub-style activity graph of your notes in `raw/`, with per-day tooltips. |
+| [thought-constellation.html](visualizations/thought-constellation.html) | Your notes as a night sky: stars clustered by frontmatter tag (a payoff of enrich-note), related notes linked, click a star to read the note. |
+
 ## Running in the cloud
 
 The `-cloud` variants are built for scheduled runners like [Oz](https://oz.dev). They assume the environment setup has synced your vault to `~/vault` with [Obsidian's headless CLI](https://obsidian.md/help/headless). See the blog post below for the full environment and schedule setup.

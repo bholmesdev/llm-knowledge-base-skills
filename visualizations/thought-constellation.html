@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Thought Constellation</title>
+	</head>
+	<body class="m-0 h-screen overflow-hidden bg-background font-sans text-foreground">
+		<canvas id="sky" class="fixed inset-0 z-0 block h-full w-full cursor-grab"></canvas>
+
+		<div id="legend" class="fixed left-4 top-4 z-20 grid gap-1"></div>
+
+		<div id="tip" class="pointer-events-none fixed z-50 max-w-[240px] rounded-md border border-border bg-popover px-2.5 py-2 text-popover-foreground opacity-0 shadow-md backdrop-blur transition-opacity"></div>
+
+		<aside id="panel" class="fixed inset-y-0 right-0 z-40 flex w-[min(420px,88vw)] translate-x-full flex-col border-l border-border bg-card text-card-foreground shadow-xl backdrop-blur transition-transform duration-300">
+			<div class="relative border-b border-border p-5">
+				<button id="panelClose" class="absolute right-3 top-3 grid h-7 w-7 place-items-center rounded-md border border-border text-muted-foreground hover:bg-accent hover:text-foreground">✕</button>
+				<span id="panelBadge" class="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted-foreground"></span>
+				<h2 id="panelTitle" class="mt-2 mb-0.5 text-lg font-semibold leading-snug text-foreground"></h2>
+				<div id="panelDate" class="text-xs italic text-muted-foreground"></div>
+			</div>
+			<div id="panelBody" class="flex-1 overflow-y-auto px-5 py-4 text-sm"></div>
+		</aside>
+
+		<div id="hint" class="pointer-events-none fixed inset-x-0 bottom-4 z-10 text-center text-[11.5px] text-muted-foreground">
+			Drag the sky to pan · click a star to open the memo
+		</div>
+		<div id="boot" class="fixed inset-0 z-50 grid place-items-center bg-background text-sm italic text-muted-foreground">Charting the night sky…</div>
+
+		<script>
+			const PALETTE = ["#e0a32e", "#4a90d9", "#41a96a", "#d96a4a", "#8d7bd8", "#2aa7a0", "#9aa1ac"];
+			const STRAY_COLOR = PALETTE[PALETTE.length - 1];
+			const MEDIUM_TAGS = new Set(["book", "podcast", "video", "article"]);
+			const TOP_CLUSTERS = 6;
+			let CLUSTERS = [], CMAP = {};
+			const STOP = new Set("the a an of and or in to on for s is are am was were why how it its you your i me my we our they their this that these those from with by what who whom be as at into not no re ve ll t d on off up out about over just like get got go going can will would should could".split(" "));
+
+			function tokens(slug) { return slug.split("-").filter((x) => x && isNaN(x) && x.length > 2 && !STOP.has(x)); }
+			function titleCase(slug) { return slug.replace(/-/g, " ").replace(/\b\w/g, (m) => m.toUpperCase()).replace(/\bAi\b/g, "AI").replace(/\bPlg\b/g, "PLG"); }
+			function escapeHtml(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+			function wikiKey(s) { return s.toLowerCase().trim().replace(/\.md$/, "").replace(/^\d{4}-\d{2}-\d{2}-/, "").replace(/-[a-z0-9]{6,10}$/, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""); }
+			const wikiIndex = new Map();
+			function addWikiKey(key, node) { if (key && !wikiIndex.has(key)) wikiIndex.set(key, node); }
+			function buildWikiIndex() {
+				wikiIndex.clear();
+				for (const node of nodes) {
+					const file = node.path.split("/").pop().replace(/\.md$/, "");
+					addWikiKey(wikiKey(node.title), node);
+					addWikiKey(wikiKey(file), node);
+					addWikiKey(file.toLowerCase(), node);
+				}
+			}
+			function inline(s) {
+				return escapeHtml(s).replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, target, label) => {
+					const key = wikiKey(target);
+					const text = label || target;
+					if (!wikiIndex.has(key)) return `<span class="text-muted-foreground">${text}</span>`;
+					return `<button type="button" class="wiki-link rounded-sm text-left font-medium text-foreground underline decoration-border underline-offset-2 hover:text-muted-foreground" data-wiki="${key}">${text}</button>`;
+				})
+					.replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold text-foreground">$1</strong>')
+					.replace(/(^|[^*])\*(?!\s)([^*]+?)\*/g, "$1<em>$2</em>")
+					.replace(/`([^`]+?)`/g, '<code class="rounded bg-muted px-1 font-mono text-[0.85em]">$1</code>');
+			}
+			const MD = {
+				h1: "mt-4 mb-1 text-base font-semibold text-foreground",
+				h2: "mt-4 mb-1 text-[15px] font-semibold text-foreground",
+				h3: "mt-3 mb-1 text-sm font-medium text-foreground",
+				p: "mb-2 leading-relaxed text-card-foreground",
+				ul: "mb-2 list-disc pl-5",
+				li: "my-0.5 text-card-foreground",
+				bq: "mb-2 border-l-2 border-border pl-3 italic text-muted-foreground",
+			};
+			function mdToHtml(md) {
+				const lines = md.split("\n"); let html = "", inList = false;
+				const close = () => { if (inList) { html += "</ul>"; inList = false; } };
+				for (const raw of lines) {
+					const line = raw.replace(/\s+$/, ""); let m;
+					if (!line.trim()) { close(); continue; }
+					if ((m = line.match(/^(#{1,6})\s+(.*)$/))) { close(); const l = Math.min(m[1].length, 3); html += `<h${l} class="${MD["h" + l]}">${inline(m[2])}</h${l}>`; }
+					else if ((m = line.match(/^\s*[-*]\s+(.*)$/))) { if (!inList) { html += `<ul class="${MD.ul}">`; inList = true; } html += `<li class="${MD.li}">${inline(m[1])}</li>`; }
+					else if ((m = line.match(/^\s*>\s?(.*)$/))) { close(); html += `<blockquote class="${MD.bq}">${inline(m[1])}</blockquote>`; }
+					else { close(); html += `<p class="${MD.p}">${inline(line)}</p>`; }
+				}
+				close(); return html;
+			}
+			function stripFm(t) { if (t.startsWith("---")) { const e = t.indexOf("\n---", 3); if (e !== -1) { const a = t.indexOf("\n", e + 1); return t.slice(a + 1); } } return t; }
+
+			function probe(cls, prop) {
+				const el = document.createElement("span"); el.className = cls; el.style.position = "absolute"; el.style.opacity = "0";
+				document.body.appendChild(el); const v = getComputedStyle(el)[prop]; el.remove(); return v;
+			}
+			const THEME = {
+				bg: probe("bg-background", "backgroundColor"),
+				line: probe("text-muted-foreground", "color"),
+				fg: probe("text-foreground", "color"),
+			};
+			function rgba(c, a) {
+				if (c.startsWith("#")) c = hexRgb(c);
+				const m = c.match(/(\d+(?:\.\d+)?)/g); if (!m) return c;
+				return `rgba(${m[0]},${m[1]},${m[2]},${a})`;
+			}
+
+			const canvas = document.getElementById("sky"), ctx = canvas.getContext("2d");
+			const tip = document.getElementById("tip");
+			let DPR = 1, nodes = [], edges = [], adjacency = {}, view = { x: 0, y: 0, scale: 1 };
+			let hoverNode = null, focusCluster = null, running = false, settling = true;
+			const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+			function resize() {
+				DPR = Math.min(window.devicePixelRatio || 1, 2);
+				canvas.width = innerWidth * DPR; canvas.height = innerHeight * DPR;
+				ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+			}
+			window.addEventListener("resize", resize); resize();
+
+			function anchorsFor() {
+				const cx = innerWidth / 2, cy = innerHeight / 2, a = {};
+				const real = CLUSTERS.filter((c) => c.key !== "other");
+				real.forEach((c, i) => { const t = (i / real.length) * Math.PI * 2 - Math.PI / 2; a[c.key] = { x: cx + Math.cos(t) * 230, y: cy + Math.sin(t) * 200 }; });
+				a.other = { x: cx, y: cy + 30 };
+				return a;
+			}
+
+			function noteTags(props) {
+				let raw = props && props.tags;
+				if (typeof raw === "string") raw = raw.split(/[,\s]+/);
+				if (!Array.isArray(raw)) return [];
+				return raw.filter((t) => typeof t === "string").map((t) => t.toLowerCase().trim().replace(/^#/, "")).filter(Boolean);
+			}
+			function topicTag(props) {
+				return noteTags(props).find((t) => !MEDIUM_TAGS.has(t)) || null;
+			}
+
+			async function build() {
+				let files = [];
+				try { files = await hubble.files.list("**/*.md"); }
+				catch (e) { document.getElementById("boot").textContent = "The sky is unreachable here."; return; }
+
+				const paths = files.map((f) => (typeof f === "string" ? f : f.path)).filter((p) => !p.startsWith(".") && !p.includes("/."));
+				const reads = await Promise.all(paths.map((p) => hubble.files.safeRead(p).catch(() => ({ ok: false }))));
+
+				const records = [], tagCounts = {};
+				for (let i = 0; i < paths.length; i++) {
+					const path = paths[i];
+					const name = path.split("/").pop().replace(/\.md$/, "");
+					const m = name.match(/^(\d{4})-(\d{2})-(\d{2})-(.+?)-[a-z0-9]{6,10}$/);
+					let slug, dateStr = "";
+					if (m) { slug = m[4]; dateStr = `${MONTHS[+m[2] - 1]} ${+m[3]}, ${m[1]}`; }
+					else { slug = name.toLowerCase(); }
+					const res = reads[i];
+					const file = res && res.ok ? res.value : null;
+					const tag = file ? topicTag(file.properties) : null;
+					if (tag) tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+					records.push({ path, slug, dateStr, tag, body: file && typeof file.body === "string" ? file.body : "" });
+				}
+				if (!records.length) { document.getElementById("boot").textContent = "No notes to chart."; return; }
+
+				const top = Object.keys(tagCounts).sort((a, b) => tagCounts[b] - tagCounts[a]).slice(0, TOP_CLUSTERS);
+				CLUSTERS = top.map((t, i) => ({ key: t, label: titleCase(t), color: PALETTE[i % (PALETTE.length - 1)] }));
+				CLUSTERS.push({ key: "other", label: "Stray Thoughts", color: STRAY_COLOR });
+				CMAP = Object.fromEntries(CLUSTERS.map((c) => [c.key, c]));
+
+				const anchors = anchorsFor();
+				for (const r of records) {
+					const cluster = r.tag && CMAP[r.tag] ? r.tag : "other";
+					const toks = tokens(r.slug), a = anchors[cluster];
+					nodes.push({ path: r.path, title: titleCase(r.slug), date: r.dateStr, cluster, toks: new Set(toks), body: r.body,
+						x: a.x + (Math.random() - 0.5) * 160, y: a.y + (Math.random() - 0.5) * 160, vx: 0, vy: 0 });
+				}
+
+				const byCluster = {};
+				nodes.forEach((n, i) => { (byCluster[n.cluster] ||= []).push(i); });
+				const seen = new Set();
+				for (const key in byCluster) {
+					const idxs = byCluster[key];
+					for (const i of idxs) {
+						const sims = [];
+						for (const j of idxs) { if (i === j) continue; let sh = 0; nodes[i].toks.forEach((t) => { if (nodes[j].toks.has(t)) sh++; }); if (sh > 0) sims.push([j, sh]); }
+						sims.sort((a, b) => b[1] - a[1]);
+						sims.slice(0, 3).forEach(([j]) => { const k = i < j ? i + "-" + j : j + "-" + i; if (!seen.has(k)) { seen.add(k); edges.push([i, j]); } });
+					}
+				}
+				edges.forEach(([a, b]) => { (adjacency[a] ||= []).push(b); (adjacency[b] ||= []).push(a); });
+				buildWikiIndex();
+
+				buildLegend();
+				document.getElementById("boot").remove();
+				for (let s = 0; s < 160; s++) physics();
+				running = true; requestAnimationFrame(frame);
+			}
+
+			function buildLegend() {
+				const counts = {}; nodes.forEach((n) => (counts[n.cluster] = (counts[n.cluster] || 0) + 1));
+				const el = document.getElementById("legend");
+				CLUSTERS.forEach((c) => {
+					if (!counts[c.key]) return;
+					const chip = document.createElement("button");
+					chip.type = "button";
+					chip.className = "flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-[13px] text-card-foreground shadow-sm backdrop-blur transition hover:bg-accent";
+					chip.innerHTML = `<span class="h-2.5 w-2.5 rounded-full" style="background:${c.color}; box-shadow:0 0 10px ${c.color}"></span><span>${c.label}</span><span class="ml-auto tabular-nums text-[11.5px] text-muted-foreground">${counts[c.key]}</span>`;
+					chip.addEventListener("mouseenter", () => (focusCluster = c.key));
+					chip.addEventListener("mouseleave", () => (focusCluster = null));
+					chip.addEventListener("click", () => {
+						focusCluster = focusCluster === c.key ? null : c.key;
+						[...el.children].forEach((ch) => ch.classList.toggle("opacity-40", focusCluster && ch !== chip));
+					});
+					el.appendChild(chip);
+				});
+			}
+
+			const REPULSE = 2100, SPRING = 0.009, LINK = 68, GRAV = 0.01, DAMP = 0.78, SETTLE_SPEED = 0.018;
+			function physics() {
+				const anchors = anchorsFor(), n = nodes.length;
+				for (let i = 0; i < n; i++) {
+					const a = nodes[i];
+					for (let j = i + 1; j < n; j++) {
+						const b = nodes[j];
+						let dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy; if (d2 < 1) d2 = 1;
+						if (d2 > 90000) continue;
+						const f = REPULSE / d2, d = Math.sqrt(d2), fx = (dx / d) * f, fy = (dy / d) * f;
+						a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
+					}
+				}
+				for (const [i, j] of edges) {
+					const a = nodes[i], b = nodes[j];
+					let dx = b.x - a.x, dy = b.y - a.y; const d = Math.sqrt(dx * dx + dy * dy) || 1, f = (d - LINK) * SPRING;
+					const fx = (dx / d) * f, fy = (dy / d) * f;
+					a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
+				}
+				let speed = 0;
+				for (const nd of nodes) {
+					const an = anchors[nd.cluster];
+					nd.vx += (an.x - nd.x) * GRAV; nd.vy += (an.y - nd.y) * GRAV;
+					if (nd === dragNode) continue;
+					nd.vx *= DAMP; nd.vy *= DAMP; nd.x += nd.vx; nd.y += nd.vy;
+					speed += Math.abs(nd.vx) + Math.abs(nd.vy);
+				}
+				if (speed / n < SETTLE_SPEED) {
+					for (const nd of nodes) nd.vx = nd.vy = 0;
+					settling = false;
+				}
+			}
+
+			function frame() {
+				if (!running) return;
+				if (settling || dragNode) physics();
+				drawBackground();
+				ctx.save(); ctx.translate(view.x, view.y); ctx.scale(view.scale, view.scale);
+
+				ctx.lineWidth = 0.9 / view.scale;
+				for (const [i, j] of edges) {
+					const a = nodes[i], b = nodes[j];
+					const hot = hoverNode && (hoverNode === a || hoverNode === b);
+					const dim = focusCluster && a.cluster !== focusCluster && b.cluster !== focusCluster;
+					ctx.strokeStyle = hot ? rgba(CMAP[a.cluster].color, 0.8) : rgba(THEME.line, dim ? 0.04 : 0.28);
+					ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+				}
+
+				for (const nd of nodes) {
+					const dim = focusCluster && focusCluster !== nd.cluster;
+					const isHover = hoverNode === nd;
+					const r = (isHover ? 6.5 : 4.5) / Math.sqrt(view.scale);
+					ctx.globalAlpha = dim ? 0.25 : 1;
+					ctx.beginPath(); ctx.arc(nd.x, nd.y, r + 4.5, 0, 7); ctx.fillStyle = rgba(CMAP[nd.cluster].color, isHover ? 0.26 : 0.12); ctx.fill();
+					ctx.beginPath(); ctx.arc(nd.x, nd.y, r + 1.5, 0, 7); ctx.fillStyle = rgba(THEME.bg, 0.9); ctx.fill();
+					ctx.beginPath(); ctx.arc(nd.x, nd.y, r, 0, 7); ctx.fillStyle = CMAP[nd.cluster].color; ctx.fill();
+					if (isHover) { ctx.lineWidth = 2 / view.scale; ctx.strokeStyle = THEME.fg; ctx.stroke(); }
+					ctx.globalAlpha = 1;
+				}
+				ctx.restore();
+				requestAnimationFrame(frame);
+			}
+
+			function drawBackground() {
+				ctx.fillStyle = THEME.bg;
+				ctx.fillRect(0, 0, innerWidth, innerHeight);
+			}
+
+			function hexRgb(hex) { const n = parseInt(hex.slice(1), 16); return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`; }
+
+			let dragNode = null, panning = false, last = { x: 0, y: 0 }, moved = 0;
+			function screenToWorld(mx, my) {
+				return { x: (mx - view.x) / view.scale, y: (my - view.y) / view.scale };
+			}
+			function worldToScreen(wx, wy) {
+				return { x: wx * view.scale + view.x, y: wy * view.scale + view.y };
+			}
+			function pick(mx, my) {
+				const { x, y } = screenToWorld(mx, my); let best = null, bd = (14 / view.scale) ** 2;
+				for (const nd of nodes) { const dx = nd.x - x, dy = nd.y - y, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = nd; } }
+				return best;
+			}
+			canvas.addEventListener("wheel", (e) => {
+				e.preventDefault();
+				const before = screenToWorld(e.clientX, e.clientY);
+				const factor = Math.exp(-e.deltaY * 0.0012);
+				view.scale = Math.max(0.35, Math.min(4, view.scale * factor));
+				view.x = e.clientX - before.x * view.scale;
+				view.y = e.clientY - before.y * view.scale;
+			}, { passive: false });
+			canvas.addEventListener("mousedown", (e) => {
+				moved = 0; last = { x: e.clientX, y: e.clientY };
+				const hit = pick(e.clientX, e.clientY);
+				if (hit) { dragNode = hit; settling = true; } else { panning = true; canvas.classList.add("cursor-grabbing"); }
+			});
+			window.addEventListener("mousemove", (e) => {
+				moved += Math.abs(e.movementX) + Math.abs(e.movementY);
+				if (dragNode) { const p = screenToWorld(e.clientX, e.clientY); dragNode.x = p.x; dragNode.y = p.y; dragNode.vx = dragNode.vy = 0; }
+				else if (panning) { view.x += e.clientX - last.x; view.y += e.clientY - last.y; last = { x: e.clientX, y: e.clientY }; }
+				else {
+					const hit = pick(e.clientX, e.clientY); hoverNode = hit;
+					if (hit) {
+						const p = worldToScreen(hit.x, hit.y);
+						tip.style.left = p.x + "px"; tip.style.top = p.y + "px";
+						tip.style.transform = "translate(-50%, calc(-100% - 16px))"; tip.style.opacity = "1";
+						tip.innerHTML = `<div class="text-[13px] leading-snug">${escapeHtml(hit.title)}</div><div class="mt-0.5 text-[11px] text-muted-foreground">${CMAP[hit.cluster].label}${hit.date ? " · " + hit.date : ""}</div>`;
+						canvas.style.cursor = "pointer";
+					} else { tip.style.opacity = "0"; canvas.style.cursor = "grab"; }
+				}
+			});
+			window.addEventListener("mouseup", (e) => {
+				if (dragNode && moved < 5) openPanel(dragNode);
+				else if (panning && moved < 5) { const hit = pick(e.clientX, e.clientY); if (hit) openPanel(hit); }
+				dragNode = null; panning = false; canvas.classList.remove("cursor-grabbing");
+			});
+
+			async function openPanel(node) {
+				const p = document.getElementById("panel"), c = CMAP[node.cluster];
+				document.getElementById("panelBadge").innerHTML = `<span class="h-2 w-2 rounded-full" style="background:${c.color}"></span>${c.label}`;
+				document.getElementById("panelTitle").textContent = node.title;
+				document.getElementById("panelDate").textContent = node.date || "";
+				const body = document.getElementById("panelBody");
+				body.innerHTML = `<p class="italic text-muted-foreground">Loading the memo…</p>`;
+				p.classList.remove("translate-x-full");
+
+				let html = "";
+				if (node.body) html = mdToHtml(stripFm(node.body));
+				else {
+					try {
+						const res = await hubble.files.safeRead(node.path);
+						if (res.ok) { node.body = res.value.body || ""; html = mdToHtml(stripFm(node.body)); }
+					} catch (e) {}
+					if (!html) html = `<p class="italic text-muted-foreground">This memo could not be read here.</p>`;
+				}
+
+				const nb = (adjacency[nodes.indexOf(node)] || []).slice(0, 6);
+				let nbHtml = "";
+				if (nb.length) {
+					nbHtml = `<div class="mt-4 border-t border-border pt-3"><div class="mb-2 text-[11px] uppercase tracking-wider text-muted-foreground">Nearby stars</div>` +
+						nb.map((i) => `<button class="nb mb-1 block w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-left text-[12.5px] hover:bg-accent" data-i="${i}"><span style="color:${CMAP[nodes[i].cluster].color}">◆</span> ${escapeHtml(nodes[i].title)}</button>`).join("") +
+						`</div>`;
+				}
+				body.innerHTML = html + nbHtml;
+				body.querySelectorAll(".wiki-link").forEach((btn) => btn.addEventListener("click", () => {
+					const target = wikiIndex.get(btn.dataset.wiki);
+					if (target) openPanel(target);
+				}));
+				body.querySelectorAll(".nb").forEach((btn) => btn.addEventListener("click", () => openPanel(nodes[+btn.dataset.i])));
+			}
+			document.getElementById("panelClose").addEventListener("click", () => document.getElementById("panel").classList.add("translate-x-full"));
+
+			build();
+		</script>
+	</body>
+</html>
